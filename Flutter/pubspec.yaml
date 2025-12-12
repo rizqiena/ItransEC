@@ -1,0 +1,41 @@
+name: i_transec
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.3.2
+  image_picker: ^1.1.1
+  intl: ^0.19.0
+  http: ^1.2.2  # ← Gunakan versi terbaru saja
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.3.0
+  webview_flutter: ^4.2.4
+
+  # ➕ Tambahan untuk simulasi perjalanan
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+
+  # ➕ Tambahan untuk tracking lokasi (GPS)
+  geolocator: ^12.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/splash/
+    - assets/splash/icons/
+    # - assets/images/  # Folder ini tidak ada, jadi di-comment
