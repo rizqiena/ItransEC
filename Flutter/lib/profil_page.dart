@@ -1,4 +1,4 @@
-// lib/profile_page.dart
+// lib/profil_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,11 +23,13 @@ class _ProfilPageState extends State<ProfilPage> {
   String? noHp;
   String? fotoProfil;
   bool isLoading = true;
+  double totalEmisi = 0.0;
 
   @override
   void initState() {
     super.initState();
     _loadProfil();
+    _loadTotalEmisi();
   }
 
   // ============================
@@ -53,6 +55,22 @@ class _ProfilPageState extends State<ProfilPage> {
     });
   }
 
+  // ============================
+  // LOAD TOTAL EMISI
+  // ============================
+  Future<void> _loadTotalEmisi() async {
+    final prefs = await SharedPreferences.getInstance();
+    final emisi = prefs.getDouble('total_emisi') ?? 0.0;
+
+    print("🔄 [ProfilPage] Load Total Emisi: ${emisi.toStringAsFixed(3)} kg");
+
+    if (mounted) {
+      setState(() {
+        totalEmisi = emisi;
+      });
+    }
+  }
+
   // ====================================================
   // CLEAR EMISI — FIX PENTING: Hapus SEMUA saat logout
   // ====================================================
@@ -67,6 +85,7 @@ class _ProfilPageState extends State<ProfilPage> {
     await prefs.remove('saved_kapasitas');
     await prefs.remove('saved_bahan_bakar');
     await prefs.remove('saved_fueltype');
+    await prefs.remove('history_tebus_emisi');
 
     print("🧹 Semua data emisi berhasil dihapus saat logout.");
   }
@@ -112,6 +131,37 @@ class _ProfilPageState extends State<ProfilPage> {
     }
   }
 
+  // ========================================================
+  // NAVIGATE TO TEBUS EMISI - FIX: RELOAD DATA SEBELUM NAVIGASI
+  // ========================================================
+  Future<void> _navigateToTebusEmisi() async {
+    // ✅ FIX: Reload total emisi SEBELUM masuk ke PaymentPage
+    print("🔄 [ProfilPage] Reload data emisi sebelum masuk Tebus Emisi...");
+    await _loadTotalEmisi();
+
+    // Delay kecil untuk memastikan SharedPreferences ter-update
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+
+    // Navigasi ke payment page dengan mode Tebus Emisi
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PaymentPage(
+          hargaPerKg: 1000.0,
+          isTebusEmisi: true,
+        ),
+      ),
+    );
+
+    // Refresh data setelah kembali dari payment
+    if (result == true) {
+      print("✅ [ProfilPage] Kembali dari PaymentPage, reload data...");
+      await _loadTotalEmisi();
+    }
+  }
+
   bool get isProfilLengkap => noHp != null && noHp!.isNotEmpty;
 
   // ============================
@@ -127,7 +177,10 @@ class _ProfilPageState extends State<ProfilPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadProfil,
+            onPressed: () async {
+              await _loadProfil();
+              await _loadTotalEmisi();
+            },
           ),
         ],
       ),
@@ -135,7 +188,10 @@ class _ProfilPageState extends State<ProfilPage> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-        onRefresh: _loadProfil,
+        onRefresh: () async {
+          await _loadProfil();
+          await _loadTotalEmisi();
+        },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(20),
@@ -262,15 +318,33 @@ class _ProfilPageState extends State<ProfilPage> {
               }),
 
               // ============================
-              // MENU TEBUS EMISI
+              // MENU TEBUS EMISI (FULL PAGE)
               // ============================
-              _menuItem(Icons.credit_card, "Tebus Emisi", () {
+              _menuItem(
+                Icons.credit_card,
+                "Tebus Emisi",
+                _navigateToTebusEmisi,
+                subtitle: "Kompensasi jejak karbonmu",
+              ),
+
+              // ============================
+              // MENU EDIT PROFIL
+              // ============================
+              _menuItem(Icons.edit, "Edit Profil", () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const PaymentPage(),
+                    builder: (_) => EditProfilPage(
+                      nama: nama,
+                      email: email,
+                      noHp: noHp ?? '',
+                      fotoProfil: fotoProfil ?? '',
+                    ),
                   ),
-                );
+                ).then((_) {
+                  // Refresh setelah edit profil
+                  _loadProfil();
+                });
               }),
 
               const Divider(height: 40),
@@ -290,6 +364,8 @@ class _ProfilPageState extends State<ProfilPage> {
                 const Icon(Icons.arrow_forward_ios, size: 18),
                 onTap: _showLogoutConfirmation,
               ),
+
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -338,12 +414,24 @@ class _ProfilPageState extends State<ProfilPage> {
   // ============================
   // KOMPONEN: MENU ITEM
   // ============================
-  Widget _menuItem(IconData icon, String title, VoidCallback onTap) {
+  Widget _menuItem(
+      IconData icon,
+      String title,
+      VoidCallback onTap, {
+        String? subtitle,
+      }) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF4CAF50)),
-      title: Text(title,
-          style:
-          const TextStyle(fontWeight: FontWeight.w500, fontSize: 16)),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+      ),
+      subtitle: subtitle != null
+          ? Text(
+        subtitle,
+        style: const TextStyle(fontSize: 13, color: Colors.grey),
+      )
+          : null,
       trailing: const Icon(Icons.arrow_forward_ios, size: 18),
       onTap: onTap,
     );

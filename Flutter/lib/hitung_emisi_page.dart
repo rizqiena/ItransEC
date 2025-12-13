@@ -70,7 +70,7 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
   // service untuk simpan riwayat ke backend
   final HistoryService _historyService = HistoryService();
 
-  // ===== KEY SHARED PREFERENCES (SAMA DENGAN PAYMENT PAGE) =====
+  // ===== KEY SHARED PREFERENCES (SAMA PERSIS DENGAN PAYMENT PAGE) =====
   static const _kSavedTotalEmisi = 'total_emisi';
   static const _kLastSessionEmisi = 'last_session_emisi';
   static const _kSavedHargaKg = 'saved_harga_kg';
@@ -79,6 +79,29 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
   static const _kSavedKapasitas = 'saved_kapasitas';
   static const _kSavedBahanBakar = 'saved_bahan_bakar';
   static const _kSavedFuelType = 'saved_fueltype';
+
+  // Variabel untuk menampilkan total emisi yang sudah tersimpan
+  double _displayTotalEmisi = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTotalEmisiFromLocal();
+  }
+
+  // ===== LOAD TOTAL EMISI DARI LOCAL STORAGE =====
+  Future<void> _loadTotalEmisiFromLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final total = prefs.getDouble(_kSavedTotalEmisi) ?? 0.0;
+      setState(() {
+        _displayTotalEmisi = total;
+      });
+      print("📊 LOAD TOTAL EMISI: ${total.toStringAsFixed(3)} kg");
+    } catch (e) {
+      print("❌ Error load total emisi: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -148,8 +171,14 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 child: ElevatedButton.icon(
                   onPressed: _isTracking ? null : _onStartPressed,
                   icon: const Icon(Icons.play_arrow),
-                  label: Text(
-                    _hasResult ? 'Mulai perjalanan baru' : 'Start perjalanan',
+                  label: const Text('Mulai perjalanan baru'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CAF50),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -267,6 +296,7 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
               ),
             ),
           ] else if (hasResult) ...[
+            // ===== TAMPILAN SETELAH PERJALANAN SELESAI =====
             const Text(
               "Perjalanan selesai.",
               style: TextStyle(
@@ -275,7 +305,7 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 color: Colors.black87,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
 
             // Durasi dengan ikon jam
             Row(
@@ -295,7 +325,7 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
 
             // Jarak dengan ikon rute
             Row(
@@ -307,7 +337,7 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  "Perkiraan jarak: ${_lastDistanceKm!.toStringAsFixed(2)} km.",
+                  "Perkiraan jarak: ${_lastDistanceKm!.toStringAsFixed(2)} km",
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.black87,
@@ -316,10 +346,9 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
               ],
             ),
 
-            const SizedBox(height: 10),
-            const Divider(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
+            // Total emisi perjalanan ini
             const Text(
               "Total emisi perjalanan ini",
               style: TextStyle(
@@ -328,27 +357,27 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 color: Colors.black87,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
 
-            // Angka emisi
+            // Angka emisi perjalanan ini
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
                   _lastEmissionKg != null
                       ? _lastEmissionKg!.toStringAsFixed(2)
-                      : "–",
+                      : "0.00",
                   style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: 26,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF2E7D32),
                   ),
                 ),
                 const SizedBox(width: 4),
                 const Padding(
-                  padding: EdgeInsets.only(bottom: 2),
+                  padding: EdgeInsets.only(bottom: 3),
                   child: Text(
-                    "kg CO\u2082",
+                    "kg CO₂",
                     style: TextStyle(
                       fontSize: 14,
                       color: Color(0xFF2E7D32),
@@ -357,24 +386,112 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
+            // ===== TEKS KONFIRMASI =====
             const Text(
-              "Nilai emisi perjalanan ini akan dihitung dari jarak tempuh dan "
-                  "detail kendaraan yang kamu pilih, lalu ikut terakumulasi dalam "
-                  "total emisi bulan ini.",
+              "Nilai emisi perjalanan ini akan dihitung dari jarak tempuh dan detail kendaraan yang kamu pilih, lalu ikut terakumulasi dalam total emisi bulan ini.",
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.black54,
+                color: Colors.black87,
               ),
             ),
           ] else ...[
+            // ===== TAMPILAN SEBELUM PERJALANAN (DEFAULT) =====
             const Text(
-              "Pilih jenis kendaraan untuk menghitung emisi perjalananmu. "
-                  "Setelah itu, lengkapi detail kendaraan dan mulai perjalanan "
-                  "dengan tombol Start.",
+              "Perjalanan selesai.",
               style: TextStyle(
                 fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Durasi dengan ikon jam
+            Row(
+              children: [
+                const Icon(
+                  Icons.access_time,
+                  size: 18,
+                  color: Color(0xFF4CAF50),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  "Perkiraan durasi: 1 detik",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+
+            // Jarak dengan ikon rute
+            Row(
+              children: [
+                const Icon(
+                  Icons.route,
+                  size: 18,
+                  color: Color(0xFF4CAF50),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  "Perkiraan jarak: 0.00 km",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Total emisi perjalanan ini
+            const Text(
+              "Total emisi perjalanan ini",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // Angka emisi perjalanan ini (0.00)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text(
+                  "0.00",
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF2E7D32),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    "kg CO₂",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF2E7D32),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // ===== TEKS KONFIRMASI =====
+            const Text(
+              "Nilai emisi perjalanan ini akan dihitung dari jarak tempuh dan detail kendaraan yang kamu pilih, lalu ikut terakumulasi dalam total emisi bulan ini.",
+              style: TextStyle(
+                fontSize: 13,
                 color: Colors.black87,
               ),
             ),
@@ -928,6 +1045,11 @@ class _HitungEmisiPageState extends State<HitungEmisiPage> {
       if (bahanBakar.isNotEmpty) {
         await prefs.setString(_kSavedBahanBakar, bahanBakar);
       }
+
+      // ===== UPDATE DISPLAY TOTAL EMISI =====
+      setState(() {
+        _displayTotalEmisi = newTotal;
+      });
 
       // Tampilkan notifikasi sukses
       if (mounted) {

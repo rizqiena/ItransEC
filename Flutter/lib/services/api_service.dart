@@ -632,4 +632,223 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
+
+  // ========================
+  // 🌱 TEBUS EMISI - LOCAL STORAGE METHODS
+  // ========================
+
+  /// Get total emisi dari local storage
+  static Future<double> getTotalEmisiLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getDouble('total_emisi') ?? 0.0;
+    } catch (e) {
+      print('❌ Error getTotalEmisiLocal: $e');
+      return 0.0;
+    }
+  }
+
+  /// Update total emisi setelah tebus (kurangi emisi)
+  static Future<void> updateTotalEmisiLocal(double sisaEmisi) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('total_emisi', sisaEmisi);
+      print('✅ Total emisi berhasil diupdate: $sisaEmisi kg');
+    } catch (e) {
+      print('❌ Error updateTotalEmisiLocal: $e');
+    }
+  }
+
+  /// Simpan history tebus emisi ke local storage
+  static Future<void> saveHistoryTebusEmisi(Map<String, dynamic> history) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List<String> historyList = prefs.getStringList('history_tebus_emisi') ?? [];
+
+      // Insert di awal (newest first)
+      historyList.insert(0, jsonEncode(history));
+
+      // Limit maksimal 50 item untuk menghindari data terlalu besar
+      if (historyList.length > 50) {
+        historyList = historyList.sublist(0, 50);
+      }
+
+      await prefs.setStringList('history_tebus_emisi', historyList);
+      print('✅ History tebus emisi berhasil disimpan');
+    } catch (e) {
+      print('❌ Error saveHistoryTebusEmisi: $e');
+    }
+  }
+
+  /// Get history tebus emisi dari local storage
+  static Future<List<Map<String, dynamic>>> getHistoryTebusEmisi() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List<String> historyList = prefs.getStringList('history_tebus_emisi') ?? [];
+
+      return historyList.map((e) {
+        try {
+          return jsonDecode(e) as Map<String, dynamic>;
+        } catch (decodeError) {
+          print('❌ Error decode history item: $decodeError');
+          return <String, dynamic>{};
+        }
+      }).where((item) => item.isNotEmpty).toList();
+    } catch (e) {
+      print('❌ Error getHistoryTebusEmisi: $e');
+      return [];
+    }
+  }
+
+  /// Clear semua history tebus emisi (opsional - untuk testing atau reset)
+  static Future<void> clearHistoryTebusEmisi() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('history_tebus_emisi');
+      print('✅ History tebus emisi berhasil dihapus');
+    } catch (e) {
+      print('❌ Error clearHistoryTebusEmisi: $e');
+    }
+  }
+
+  /// Get total emisi yang sudah ditebus (dari history)
+  static Future<double> getTotalEmisiDitebus() async {
+    try {
+      final history = await getHistoryTebusEmisi();
+      double total = 0.0;
+
+      for (var item in history) {
+        if (item.containsKey('emisi_kg')) {
+          total += (item['emisi_kg'] as num).toDouble();
+        }
+      }
+
+      return total;
+    } catch (e) {
+      print('❌ Error getTotalEmisiDitebus: $e');
+      return 0.0;
+    }
+  }
+
+  /// Get statistik tebus emisi bulan ini
+  static Future<Map<String, dynamic>> getStatistikTebusBulanIni() async {
+    try {
+      final history = await getHistoryTebusEmisi();
+      final now = DateTime.now();
+      double totalEmisi = 0.0;
+      double totalNominal = 0.0;
+      int jumlahTransaksi = 0;
+
+      for (var item in history) {
+        if (item.containsKey('date')) {
+          try {
+            final date = DateTime.parse(item['date']);
+
+            // Cek apakah di bulan yang sama
+            if (date.year == now.year && date.month == now.month) {
+              totalEmisi += (item['emisi_kg'] as num?)?.toDouble() ?? 0.0;
+              totalNominal += (item['nominal'] as num?)?.toDouble() ?? 0.0;
+              jumlahTransaksi++;
+            }
+          } catch (e) {
+            print('❌ Error parsing date: $e');
+          }
+        }
+      }
+
+      return {
+        'total_emisi_ditebus': totalEmisi,
+        'total_nominal': totalNominal,
+        'jumlah_transaksi': jumlahTransaksi,
+        'bulan': now.month,
+        'tahun': now.year,
+      };
+    } catch (e) {
+      print('❌ Error getStatistikTebusBulanIni: $e');
+      return {
+        'total_emisi_ditebus': 0.0,
+        'total_nominal': 0.0,
+        'jumlah_transaksi': 0,
+      };
+    }
+  }
+
+  // ========================
+  // 🧹 UTILITY METHODS
+  // ========================
+
+  /// Clear all emission data (dipanggil saat logout)
+  static Future<void> clearAllEmissionData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      await prefs.remove('total_emisi');
+      await prefs.remove('last_session_emisi');
+      await prefs.remove('saved_harga_kg');
+      await prefs.remove('saved_jarak');
+      await prefs.remove('saved_vehicle');
+      await prefs.remove('saved_kapasitas');
+      await prefs.remove('saved_bahan_bakar');
+      await prefs.remove('saved_fueltype');
+      await prefs.remove('history_tebus_emisi');
+
+      print('✅ Semua data emisi berhasil dihapus');
+    } catch (e) {
+      print('❌ Error clearAllEmissionData: $e');
+    }
+  }
+
+  /// Get user ID dari local storage
+  static Future<String?> getUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userDataString = prefs.getString('user_data');
+
+      if (userDataString != null) {
+        final userData = jsonDecode(userDataString);
+        return userData['id']?.toString() ?? userData['ID_Masyarakat']?.toString();
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error getUserId: $e');
+      return null;
+    }
+  }
+
+  /// Get user name dari local storage
+  static Future<String?> getUserName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userDataString = prefs.getString('user_data');
+
+      if (userDataString != null) {
+        final userData = jsonDecode(userDataString);
+        return userData['Nama_Masyarakat'];
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error getUserName: $e');
+      return null;
+    }
+  }
+
+  /// Get user email dari local storage
+  static Future<String?> getUserEmail() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userDataString = prefs.getString('user_data');
+
+      if (userDataString != null) {
+        final userData = jsonDecode(userDataString);
+        return userData['Email_Masyarakat'];
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error getUserEmail: $e');
+      return null;
+    }
+  }
 }
