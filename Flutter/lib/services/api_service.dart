@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiService {
   static const String baseUrl = 'http://192.168.1.4:8000/api';
@@ -109,7 +110,6 @@ class ApiService {
         );
       }
 
-      // FIX: Jangan hapus data emisi!
       await prefs.remove('token');
       await prefs.remove('user_type');
       await prefs.remove('user_data');
@@ -117,12 +117,9 @@ class ApiService {
       return true;
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
-
-      // Tetap hanya hapus data login
       await prefs.remove('token');
       await prefs.remove('user_type');
       await prefs.remove('user_data');
-
       return false;
     }
   }
@@ -166,6 +163,7 @@ class ApiService {
   static Future<Map<String, dynamic>> updateProfil({
     required String nama,
     required String email,
+    String? password,
     String? nomorHp,
     File? fotoProfil,
   }) async {
@@ -179,28 +177,37 @@ class ApiService {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/masyarakat/profil'),
+        Uri.parse('$baseUrl/masyarakat/profil/update'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
       request.fields['Nama_Masyarakat'] = nama;
       request.fields['Email_Masyarakat'] = email;
+      request.fields['_method'] = 'PUT';
+
+      if (password != null && password.isNotEmpty) {
+        request.fields['KataSandi_Masyarakat'] = password;
+      }
 
       if (nomorHp != null && nomorHp.isNotEmpty) {
-        request.fields['Nomor_HP'] = nomorHp;
+        request.fields['No_Telp_Masyarakat'] = nomorHp;
       }
 
       if (fotoProfil != null) {
-        request.files.add(await http.MultipartFile.fromPath(
-          'foto_profil',
-          fotoProfil.path,
-        ));
+        request.files.add(
+          await http.MultipartFile.fromPath('Foto_Profil', fotoProfil.path),
+        );
       }
 
-      final streamed = await request.send();
-      final response = await http.Response.fromStream(streamed);
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      final data = jsonDecode(response.body);
 
-      return jsonDecode(response.body);
+      if (data['status'] == true) {
+        await prefs.setString('user_data', jsonEncode(data['data']));
+      }
+
+      return data;
     } catch (e) {
       return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
@@ -226,9 +233,9 @@ class ApiService {
           'Authorization': 'Bearer $token',
         },
         body: jsonEncode({
-          'password_lama': passwordLama,
-          'password_baru': passwordBaru,
-          'konfirmasi_password': konfirmasiPassword,
+          'old_password': passwordLama,
+          'new_password': passwordBaru,
+          'new_password_confirmation': konfirmasiPassword,
         }),
       );
 
@@ -239,14 +246,16 @@ class ApiService {
   }
 
   // ========================
-  // 📊 ADMIN DASHBOARD
+  // 📊 DASHBOARD STATS
   // ========================
   static Future<Map<String, dynamic>> getDashboardStats() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
       final response = await http.get(
         Uri.parse('$baseUrl/admin/stats'),
@@ -263,25 +272,299 @@ class ApiService {
   }
 
   // ========================
-  // 👥 MASYARAKAT MANAGEMENT
+  // 📰 BERITA MANAGEMENT
   // ========================
-  static Future<Map<String, dynamic>> getMasyarakat({
-    int page = 1,
-    int perPage = 20,
-    String search = '',
+  static Future<Map<String, dynamic>> getAllBerita() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/berita'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getBeritaById(int id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/berita/$id'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createBerita({
+    required String judul,
+    required String deskripsi,
+    required String tanggal,
+    File? gambar,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
-      final uri = Uri.parse('$baseUrl/admin/masyarakat').replace(
-        queryParameters: {
-          'page': page.toString(),
-          'per_page': perPage.toString(),
-          if (search.isNotEmpty) 'search': search,
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/admin/berita/store'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['Judul_Berita'] = judul;
+      request.fields['Deskripsi_Berita'] = deskripsi;
+      request.fields['Tanggal_Berita'] = tanggal;
+
+      if (gambar != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('Gambar_Berita', gambar.path),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateBerita({
+    required int id,
+    required String judul,
+    required String deskripsi,
+    required String tanggal,
+    File? gambar,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/admin/berita/$id/update'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['Judul_Berita'] = judul;
+      request.fields['Deskripsi_Berita'] = deskripsi;
+      request.fields['Tanggal_Berita'] = tanggal;
+      request.fields['_method'] = 'PUT';
+
+      if (gambar != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('Gambar_Berita', gambar.path),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> deleteBerita(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/admin/berita/$id/delete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
         },
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  // ========================
+  // 👥 PENERIMA MANAGEMENT
+  // ========================
+  static Future<Map<String, dynamic>> getAllPenerima() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/penerima'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createPenerima({
+    required String nama,
+    required String alamat,
+    required String noTelp,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/penerima/store'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'Nama_Penerima': nama,
+          'Alamat_Penerima': alamat,
+          'No_Telp_Penerima': noTelp,
+        }),
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updatePenerima({
+    required int id,
+    required String nama,
+    required String alamat,
+    required String noTelp,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/admin/penerima/$id/update'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'Nama_Penerima': nama,
+          'Alamat_Penerima': alamat,
+          'No_Telp_Penerima': noTelp,
+        }),
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> deletePenerima(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/admin/penerima/$id/delete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  // ========================
+  // 👤 USER ACCOUNT MANAGEMENT
+  // ========================
+  static Future<Map<String, dynamic>> getAllUsers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/users'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getMasyarakat({
+    String? search,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      Map<String, String> queryParams = {
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      final uri = Uri.parse('$baseUrl/admin/users').replace(
+        queryParameters: queryParams,
       );
 
       final response = await http.get(
@@ -298,33 +581,83 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> deleteUser(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/admin/users/$id/delete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
   // ========================
-  // 💰 PROGRAM DONASI
+  // 🎁 PROGRAM DONASI
   // ========================
+  static Future<Map<String, dynamic>> getAllProgramDonasi() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/program-donasi'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getProgramDonasiById(int id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/program-donasi/$id'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
   static Future<Map<String, dynamic>> getProgramDonasi({
+    String? search,
     int page = 1,
     int perPage = 20,
-    String search = '',
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      Map<String, String> queryParams = {
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
 
       final uri = Uri.parse('$baseUrl/admin/program-donasi').replace(
-        queryParameters: {
-          'page': page.toString(),
-          'per_page': perPage.toString(),
-          if (search.isNotEmpty) 'search': search,
-        },
+        queryParameters: queryParams,
       );
 
       final response = await http.get(
         uri,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          if (token != null) 'Authorization': 'Bearer $token',
         },
       );
 
@@ -341,16 +674,18 @@ class ApiService {
     required double targetDonasi,
     required String tanggalMulai,
     required String tanggalSelesai,
-    double emisiDonasi = 0,
+    double? emisiDonasi,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
       final response = await http.post(
-        Uri.parse('$baseUrl/admin/program-donasi'),
+        Uri.parse('$baseUrl/admin/program-donasi/store'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -362,7 +697,7 @@ class ApiService {
           'Target_Donasi': targetDonasi,
           'Tanggal_Mulai_Donasi': tanggalMulai,
           'Tanggal_Selesai_Donasi': tanggalSelesai,
-          'Emisi_Donasi': emisiDonasi,
+          'Emisi_Donasi': emisiDonasi ?? 0,
         }),
       );
 
@@ -386,10 +721,12 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
       final response = await http.put(
-        Uri.parse('$baseUrl/admin/program-donasi/$id'),
+        Uri.parse('$baseUrl/admin/program-donasi/$id/update'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -416,10 +753,12 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
       final response = await http.delete(
-        Uri.parse('$baseUrl/admin/program-donasi/$id'),
+        Uri.parse('$baseUrl/admin/program-donasi/$id/delete'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -432,86 +771,116 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> getProgramDonasiDetail(int id) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+  // ========================
+  // 🆕 PROGRAM DONASI AKTIF (FOR USER APP)
+  // ========================
 
-      if (token == null) return {'status': false, 'message': 'Token tidak ditemukan'};
+  /// 🆕 GET PROGRAM DONASI AKTIF - Digunakan di PaymentPage
+  /// Endpoint: GET /api/programs/active
+  static Future<Map<String, dynamic>> getProgramDonasiAktif() async {
+    try {
+      final url = Uri.parse('$baseUrl/programs/active');
+
+      debugPrint('📡 [ApiService] Fetching active programs...');
+      debugPrint('📡 [ApiService] GET: $url');
 
       final response = await http.get(
-        Uri.parse('$baseUrl/admin/program-donasi/$id'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
+        url,
+        headers: {'Content-Type': 'application/json'},
       );
 
-      return jsonDecode(response.body);
+      debugPrint('📡 [ApiService] Response status: ${response.statusCode}');
+      debugPrint('📡 [ApiService] Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data;
+      } else {
+        return {
+          'success': false,
+          'message': 'Gagal memuat program: ${response.statusCode}',
+        };
+      }
     } catch (e) {
-      return {'status': false, 'message': 'Koneksi gagal: $e'};
+      debugPrint('❌ [ApiService] Error getProgramDonasiAktif: $e');
+      return {
+        'success': false,
+        'message': 'Koneksi gagal: $e',
+      };
     }
   }
 
   // ========================
-  // 💳 PAYMENT SYSTEM
+  // 💳 PAYMENT SYSTEM (MIDTRANS)
   // ========================
-  static Future<Map<String, dynamic>> createPayment({
+
+  static double computeAmount(double emisiKg, double hargaPerKg) {
+    return emisiKg * hargaPerKg;
+  }
+
+  /// 🆕 CREATE PAYMENT - UPDATED untuk support program_id & program_name
+  /// Endpoint: POST /api/payment/create
+  static Future<Map<String, dynamic>?> createPayment({
     required double amount,
+    required double emisi,
     required String name,
     required String email,
     required String phone,
-    required double emisi,
-    String? vehicleType,
-    double? jarak,
-    String? kapasitas,
-    String? bahanBakar,
+    int? programId, // 🆕 ADDED
+    String? programName, // 🆕 ADDED
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      final uri = Uri.parse('$baseUrl/create-payment');
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
 
-      final headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      final url = Uri.parse('$baseUrl/payment/create');
+
+      final body = {
+        'amount': amount,
+        'emisi_kg': emisi,
+        'customer_name': name,
+        'customer_email': email,
+        'customer_phone': phone,
+        if (programId != null) 'program_id': programId, // 🆕
+        if (programName != null) 'program_name': programName, // 🆕
       };
 
-      final Map<String, dynamic> bodyMap = {
-        "amount": amount.toInt(),
-        "emisi": emisi,
-        "name": name,
-        "email": email,
-        "phone": phone,
-      };
+      debugPrint('📡 [ApiService] Creating payment...');
+      debugPrint('📡 [ApiService] POST: $url');
+      debugPrint('📡 Amount: $amount, Emisi: $emisi');
+      debugPrint('📡 Program ID: $programId, Program Name: $programName');
+      debugPrint('📡 Body: $body');
 
-      if (vehicleType != null) bodyMap['vehicle_type'] = vehicleType;
-      if (jarak != null) bodyMap['jarak'] = jarak;
-      if (kapasitas != null) bodyMap['kapasitas'] = kapasitas;
-      if (bahanBakar != null) bodyMap['bahan_bakar'] = bahanBakar;
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
 
-      final body = jsonEncode(bodyMap);
+      debugPrint('📡 [ApiService] Response status: ${response.statusCode}');
+      debugPrint('📡 [ApiService] Response body: ${response.body}');
 
-      final response = await http.post(uri, headers: headers, body: body);
-
-      final data = jsonDecode(response.body);
-
-      String? redirect =
-          data['redirect_url'] ?? data['snap_url'] ?? data['payment_url'];
-
-      return {
-        'success': response.statusCode == 200 || response.statusCode == 201,
-        'redirect_url': redirect,
-        'order_id': data['order_id'] ?? data['data']?['order_id'],
-        'message': data['message'] ?? 'Payment created successfully',
-      };
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        debugPrint('❌ [ApiService] Error: ${response.statusCode}');
+        return {
+          'success': false,
+          'message': 'Gagal membuat payment: ${response.statusCode}',
+        };
+      }
     } catch (e) {
+      debugPrint('❌ [ApiService] Exception createPayment: $e');
       return {
         'success': false,
         'message': 'Koneksi gagal: $e',
-        'redirect_url': null,
       };
     }
   }
@@ -521,334 +890,518 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
 
-      final uri = Uri.parse('$baseUrl/check-status/$orderId');
+      if (token == null) {
+        return {'status': false, 'message': 'Token tidak ditemukan'};
+      }
 
       final response = await http.get(
-        uri,
+        Uri.parse('$baseUrl/payment/status/$orderId'),
         headers: {
           'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
+          'Authorization': 'Bearer $token',
         },
       );
 
       return jsonDecode(response.body);
     } catch (e) {
-      return {
-        'success': false,
-        'message': 'Koneksi gagal: $e',
-      };
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
   }
 
   // ========================
-  // 🧮 computeAmount
+  // 🌍 EMISI FEATURE
   // ========================
-  static double computeAmount(double emisiKg, double hargaPerKg) {
-    final raw = emisiKg * hargaPerKg;
-    if (raw < 1) return 1;
-    return double.parse(raw.toStringAsFixed(0));
-  }
-
-  // ========================
-  // 🌿 EMISI FEATURE
-  // ========================
-  static Future<Map<String, dynamic>> saveEmisi({
-    required String userId,
-    required double emisiKg,
-    required double jarakKm,
-    required int durasiMenit,
+  static Future<Map<String, dynamic>> hitungEmisiKendaraan({
     required String jenisKendaraan,
+    required double jarak,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-
-      final uri = Uri.parse('$baseUrl/emisi/store');
-
-      final headers = {
-        'Content-Type': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
-
-      final body = jsonEncode({
-        'user_id': userId,
-        'emisi_kg': emisiKg,
-        'jarak_km': jarakKm,
-        'durasi_menit': durasiMenit,
-        'jenis_kendaraan': jenisKendaraan,
-      });
-
-      final response = await http.post(uri, headers: headers, body: body);
-
+      final response = await http.post(
+        Uri.parse('$baseUrl/emisi/kendaraan'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'jenis_kendaraan': jenisKendaraan,
+          'jarak_km': jarak,
+        }),
+      );
       return jsonDecode(response.body);
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> getTotalEmisiBulanIni({
-    required String userId,
+  static Future<Map<String, dynamic>> hitungEmisiListrik({
+    required double kwh,
+    required int jumlahHari,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-
-      final uri = Uri.parse('$baseUrl/emisi/total-bulan-ini')
-          .replace(queryParameters: {'user_id': userId});
-
-      final headers = {
-        'Content-Type': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
-
-      final response = await http.get(uri, headers: headers);
-
+      final response = await http.post(
+        Uri.parse('$baseUrl/emisi/listrik'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'kwh_perhari': kwh,
+          'jumlah_hari': jumlahHari,
+        }),
+      );
       return jsonDecode(response.body);
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> updateStatusBayar({
-    required String userId,
+  static Future<Map<String, dynamic>> hitungEmisiSampah({
+    required double beratKg,
+    required String jenisSampah,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-
-      final uri = Uri.parse('$baseUrl/emisi/update-status-bayar');
-
-      final headers = {
-        'Content-Type': 'application/json',
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
-
-      final body = jsonEncode({'user_id': userId});
-
-      final response = await http.post(uri, headers: headers, body: body);
-
+      final response = await http.post(
+        Uri.parse('$baseUrl/emisi/sampah'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'berat_kg': beratKg,
+          'jenis_sampah': jenisSampah,
+        }),
+      );
       return jsonDecode(response.body);
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
   }
 
   // ========================
-  // 🌱 TEBUS EMISI - LOCAL STORAGE METHODS
+  // 📊 TEBUS EMISI - LOCAL STORAGE
   // ========================
-
-  /// Get total emisi dari local storage
-  static Future<double> getTotalEmisiLocal() async {
+  static Future<bool> saveEmisiData({
+    required String kategori,
+    required Map<String, dynamic> data,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getDouble('total_emisi') ?? 0.0;
+
+      List<String> existingData = prefs.getStringList('emisi_list') ?? [];
+
+      Map<String, dynamic> newEntry = {
+        'kategori': kategori,
+        'data': data,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      existingData.add(jsonEncode(newEntry));
+      await prefs.setStringList('emisi_list', existingData);
+
+      double totalEmisi = await getTotalEmisi();
+      double newTotal = totalEmisi + (data['emisi_kg'] ?? 0.0);
+      await prefs.setDouble('total_emisi', newTotal);
+
+      return true;
     } catch (e) {
-      print('❌ Error getTotalEmisiLocal: $e');
-      return 0.0;
+      debugPrint('Error saving emisi data: $e');
+      return false;
     }
   }
 
-  /// Update total emisi setelah tebus (kurangi emisi)
-  static Future<void> updateTotalEmisiLocal(double sisaEmisi) async {
+  static Future<List<Map<String, dynamic>>> getEmisiList() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble('total_emisi', sisaEmisi);
-      print('✅ Total emisi berhasil diupdate: $sisaEmisi kg');
+      List<String> data = prefs.getStringList('emisi_list') ?? [];
+
+      return data.map((item) {
+        return jsonDecode(item) as Map<String, dynamic>;
+      }).toList();
     } catch (e) {
-      print('❌ Error updateTotalEmisiLocal: $e');
-    }
-  }
-
-  /// Simpan history tebus emisi ke local storage
-  static Future<void> saveHistoryTebusEmisi(Map<String, dynamic> history) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String> historyList = prefs.getStringList('history_tebus_emisi') ?? [];
-
-      // Insert di awal (newest first)
-      historyList.insert(0, jsonEncode(history));
-
-      // Limit maksimal 50 item untuk menghindari data terlalu besar
-      if (historyList.length > 50) {
-        historyList = historyList.sublist(0, 50);
-      }
-
-      await prefs.setStringList('history_tebus_emisi', historyList);
-      print('✅ History tebus emisi berhasil disimpan');
-    } catch (e) {
-      print('❌ Error saveHistoryTebusEmisi: $e');
-    }
-  }
-
-  /// Get history tebus emisi dari local storage
-  static Future<List<Map<String, dynamic>>> getHistoryTebusEmisi() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String> historyList = prefs.getStringList('history_tebus_emisi') ?? [];
-
-      return historyList.map((e) {
-        try {
-          return jsonDecode(e) as Map<String, dynamic>;
-        } catch (decodeError) {
-          print('❌ Error decode history item: $decodeError');
-          return <String, dynamic>{};
-        }
-      }).where((item) => item.isNotEmpty).toList();
-    } catch (e) {
-      print('❌ Error getHistoryTebusEmisi: $e');
+      debugPrint('Error getting emisi list: $e');
       return [];
     }
   }
 
-  /// Clear semua history tebus emisi (opsional - untuk testing atau reset)
-  static Future<void> clearHistoryTebusEmisi() async {
+  static Future<double> getTotalEmisi() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('history_tebus_emisi');
-      print('✅ History tebus emisi berhasil dihapus');
+      return prefs.getDouble('total_emisi') ?? 0.0;
     } catch (e) {
-      print('❌ Error clearHistoryTebusEmisi: $e');
-    }
-  }
-
-  /// Get total emisi yang sudah ditebus (dari history)
-  static Future<double> getTotalEmisiDitebus() async {
-    try {
-      final history = await getHistoryTebusEmisi();
-      double total = 0.0;
-
-      for (var item in history) {
-        if (item.containsKey('emisi_kg')) {
-          total += (item['emisi_kg'] as num).toDouble();
-        }
-      }
-
-      return total;
-    } catch (e) {
-      print('❌ Error getTotalEmisiDitebus: $e');
+      debugPrint('Error getting total emisi: $e');
       return 0.0;
     }
   }
 
-  /// Get statistik tebus emisi bulan ini
-  static Future<Map<String, dynamic>> getStatistikTebusBulanIni() async {
-    try {
-      final history = await getHistoryTebusEmisi();
-      final now = DateTime.now();
-      double totalEmisi = 0.0;
-      double totalNominal = 0.0;
-      int jumlahTransaksi = 0;
-
-      for (var item in history) {
-        if (item.containsKey('date')) {
-          try {
-            final date = DateTime.parse(item['date']);
-
-            // Cek apakah di bulan yang sama
-            if (date.year == now.year && date.month == now.month) {
-              totalEmisi += (item['emisi_kg'] as num?)?.toDouble() ?? 0.0;
-              totalNominal += (item['nominal'] as num?)?.toDouble() ?? 0.0;
-              jumlahTransaksi++;
-            }
-          } catch (e) {
-            print('❌ Error parsing date: $e');
-          }
-        }
-      }
-
-      return {
-        'total_emisi_ditebus': totalEmisi,
-        'total_nominal': totalNominal,
-        'jumlah_transaksi': jumlahTransaksi,
-        'bulan': now.month,
-        'tahun': now.year,
-      };
-    } catch (e) {
-      print('❌ Error getStatistikTebusBulanIni: $e');
-      return {
-        'total_emisi_ditebus': 0.0,
-        'total_nominal': 0.0,
-        'jumlah_transaksi': 0,
-      };
-    }
-  }
-
-  // ========================
-  // 🧹 UTILITY METHODS
-  // ========================
-
-  /// Clear all emission data (dipanggil saat logout)
-  static Future<void> clearAllEmissionData() async {
+  static Future<bool> clearEmisiData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
+      await prefs.remove('emisi_list');
       await prefs.remove('total_emisi');
-      await prefs.remove('last_session_emisi');
-      await prefs.remove('saved_harga_kg');
-      await prefs.remove('saved_jarak');
-      await prefs.remove('saved_vehicle');
-      await prefs.remove('saved_kapasitas');
-      await prefs.remove('saved_bahan_bakar');
-      await prefs.remove('saved_fueltype');
-      await prefs.remove('history_tebus_emisi');
-
-      print('✅ Semua data emisi berhasil dihapus');
+      return true;
     } catch (e) {
-      print('❌ Error clearAllEmissionData: $e');
+      debugPrint('Error clearing emisi data: $e');
+      return false;
     }
   }
 
-  /// Get user ID dari local storage
-  static Future<String?> getUserId() async {
+  static Future<bool> deleteEmisiItem(int index) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userDataString = prefs.getString('user_data');
+      List<String> data = prefs.getStringList('emisi_list') ?? [];
 
-      if (userDataString != null) {
-        final userData = jsonDecode(userDataString);
-        return userData['id']?.toString() ?? userData['ID_Masyarakat']?.toString();
+      if (index >= 0 && index < data.length) {
+        Map<String, dynamic> item = jsonDecode(data[index]);
+        double emisiKg = item['data']['emisi_kg'] ?? 0.0;
+
+        data.removeAt(index);
+        await prefs.setStringList('emisi_list', data);
+
+        double totalEmisi = await getTotalEmisi();
+        double newTotal = totalEmisi - emisiKg;
+        await prefs.setDouble('total_emisi', newTotal > 0 ? newTotal : 0);
+
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error deleting emisi item: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // 🆕 DONASI ADMIN FEATURES
+  // ========================
+
+  static Future<Map<String, dynamic>> getDonasiStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
       }
 
-      return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/donasi/stats'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'message': 'Failed to get stats'};
     } catch (e) {
-      print('❌ Error getUserId: $e');
+      debugPrint('Error get donasi stats: $e');
+      return {'success': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDonasiList({
+    int? programId,
+    String? status,
+    String? startDate,
+    String? endDate,
+    String? search,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      Map<String, String> queryParams = {
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+
+      if (programId != null) queryParams['program_id'] = programId.toString();
+      if (status != null) queryParams['status'] = status;
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (search != null && search.isNotEmpty) queryParams['search'] = search;
+
+      final uri = Uri.parse('$baseUrl/admin/donasi/list').replace(
+        queryParameters: queryParams,
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'message': 'Failed to get list'};
+    } catch (e) {
+      debugPrint('Error get donasi list: $e');
+      return {'success': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDonasiDetail(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/donasi/detail/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'message': 'Failed to get detail'};
+    } catch (e) {
+      debugPrint('Error get donasi detail: $e');
+      return {'success': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> exportDonasi({
+    String? startDate,
+    String? endDate,
+    int? programId,
+    String? status,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      Map<String, String> queryParams = {};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (programId != null) queryParams['program_id'] = programId.toString();
+      if (status != null) queryParams['status'] = status;
+
+      final uri = Uri.parse('$baseUrl/admin/donasi/export').replace(
+        queryParameters: queryParams,
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'message': 'Failed to export'};
+    } catch (e) {
+      debugPrint('Error export donasi: $e');
+      return {'success': false, 'message': 'Koneksi gagal: $e'};
+    }
+  }
+
+  // ========================
+  // 🛠️ UTILITY METHODS
+  // ========================
+
+  static String formatRupiah(double amount) {
+    return 'Rp ${amount.toStringAsFixed(0).replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]}.',
+    )}';
+  }
+
+  static String formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}';
+  }
+
+  static String formatDateReadable(DateTime date) {
+    const monthNames = [
+      'Jan','Feb','Mar','Apr','Mei','Jun',
+      'Jul','Agu','Sep','Okt','Nov','Des'
+    ];
+    return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+  }
+
+  static String formatEmisi(double emisiKg) {
+    return '${emisiKg.toStringAsFixed(2)} kg CO₂';
+  }
+
+  static String getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'settlement':
+      case 'success':
+        return '#10B981';
+      case 'pending':
+        return '#F59E0B';
+      case 'failed':
+      case 'expired':
+        return '#EF4444';
+      default:
+        return '#6B7280';
+    }
+  }
+
+  static String getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'settlement':
+        return 'Berhasil';
+      case 'success':
+        return 'Berhasil';
+      case 'pending':
+        return 'Menunggu';
+      case 'failed':
+        return 'Gagal';
+      case 'expired':
+        return 'Kadaluarsa';
+      default:
+        return status;
+    }
+  }
+
+  static String getProgramIcon(String programName) {
+    final name = programName.toLowerCase();
+    if (name.contains('pohon') || name.contains('penanaman')) {
+      return '🌱';
+    } else if (name.contains('energi') || name.contains('terbarukan')) {
+      return '⚡';
+    } else if (name.contains('hutan') || name.contains('konservasi')) {
+      return '🌳';
+    } else if (name.contains('sampah') || name.contains('daur')) {
+      return '♻️';
+    } else if (name.contains('air') || name.contains('sungai')) {
+      return '💧';
+    } else {
+      return '🌍';
+    }
+  }
+
+  static double calculateProgress(double current, double target) {
+    if (target <= 0) return 0.0;
+    double progress = (current / target) * 100;
+    return progress > 100 ? 100.0 : progress;
+  }
+
+  static bool isValidEmail(String email) {
+    final emailRegex = RegExp(
+        r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$'
+    );
+    return emailRegex.hasMatch(email);
+  }
+
+  static bool isValidPhone(String phone) {
+    final phoneRegex = RegExp(
+        r'^(08|628|\+628)[0-9]{8,11}$'
+    );
+    return phoneRegex.hasMatch(phone);
+  }
+
+  static String cleanPhoneNumber(String phone) {
+    String cleaned = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleaned.startsWith('628')) {
+      cleaned = '0${cleaned.substring(2)}';
+    } else if (cleaned.startsWith('+628')) {
+      cleaned = '0${cleaned.substring(3)}';
+    }
+    return cleaned;
+  }
+
+  static String getPaymentMethodIcon(String? method) {
+    if (method == null) return '💳';
+    final methodLower = method.toLowerCase();
+    if (methodLower.contains('qris')) {
+      return '📱';
+    } else if (methodLower.contains('gopay')) {
+      return '🟢';
+    } else if (methodLower.contains('ovo')) {
+      return '🟣';
+    } else if (methodLower.contains('dana')) {
+      return '🔵';
+    } else if (methodLower.contains('bca')) {
+      return '🏦';
+    } else if (methodLower.contains('mandiri')) {
+      return '🏦';
+    } else if (methodLower.contains('bni')) {
+      return '🏦';
+    } else if (methodLower.contains('bri')) {
+      return '🏦';
+    } else {
+      return '💳';
+    }
+  }
+
+  static DateTime? parseTimestamp(String? timestamp) {
+    if (timestamp == null) return null;
+    try {
+      return DateTime.parse(timestamp);
+    } catch (e) {
+      debugPrint('Error parsing timestamp: $e');
       return null;
     }
   }
 
-  /// Get user name dari local storage
-  static Future<String?> getUserName() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userDataString = prefs.getString('user_data');
+  static String getTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
 
-      if (userDataString != null) {
-        final userData = jsonDecode(userDataString);
-        return userData['Nama_Masyarakat'];
-      }
-
-      return null;
-    } catch (e) {
-      print('❌ Error getUserName: $e');
-      return null;
+    if (difference.inDays > 365) {
+      return '${(difference.inDays / 365).floor()} tahun yang lalu';
+    } else if (difference.inDays > 30) {
+      return '${(difference.inDays / 30).floor()} bulan yang lalu';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} hari yang lalu';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} jam yang lalu';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} menit yang lalu';
+    } else {
+      return 'Baru saja';
     }
   }
 
-  /// Get user email dari local storage
-  static Future<String?> getUserEmail() async {
+  // ========================
+  // 🔍 DEBUG HELPER
+  // ========================
+
+  static void debugResponse(String method, String endpoint, dynamic response) {
+    if (kDebugMode) {
+      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      debugPrint('🔍 API DEBUG: $method $endpoint');
+      debugPrint('Response: ${jsonEncode(response)}');
+      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
+  }
+
+  static Future<bool> checkTokenValidity() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userDataString = prefs.getString('user_data');
+      final token = prefs.getString('token');
 
-      if (userDataString != null) {
-        final userData = jsonDecode(userDataString);
-        return userData['Email_Masyarakat'];
-      }
+      if (token == null) return false;
 
-      return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/masyarakat/profil'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return response.statusCode == 200;
     } catch (e) {
-      print('❌ Error getUserEmail: $e');
-      return null;
+      debugPrint('Error checking token validity: $e');
+      return false;
     }
   }
 }

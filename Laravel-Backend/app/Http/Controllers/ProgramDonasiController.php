@@ -4,245 +4,87 @@ namespace App\Http\Controllers;
 
 use App\Models\ProgramDonasi;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class ProgramDonasiController extends Controller
 {
     /**
-     * Display a listing of program donasi
+     * Get active program donasi (For User App - Payment Page)
+     * GET /api/programs/active
      */
-    public function index(Request $request)
+    public function getActivePrograms()
     {
         try {
-            $perPage = $request->input('per_page', 10);
-            $search = $request->input('search', '');
-
-            $query = ProgramDonasi::query();
-
-            if (!empty($search)) {
-                $query->where(function($q) use ($search) {
-                    $q->where('Judul_Program', 'like', "%{$search}%")
-                      ->orWhere('Nama_Perusahaan', 'like', "%{$search}%")
-                      ->orWhere('Rekening_Donasi', 'like', "%{$search}%");
-                });
-            }
-
-            $query->orderBy('created_at', 'desc');
-            $programs = $query->paginate($perPage);
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Data program donasi berhasil diambil',
-                'data' => $programs->items(),
-                'pagination' => [
-                    'current_page' => $programs->currentPage(),
-                    'last_page' => $programs->lastPage(),
-                    'per_page' => $programs->perPage(),
-                    'total' => $programs->total(),
-                    'from' => $programs->firstItem(),
-                    'to' => $programs->lastItem(),
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Gagal mengambil data program donasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Store a newly created program donasi
-     */
-    public function store(Request $request)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'Judul_Program' => 'required|string|max:255',
-                'Nama_Perusahaan' => 'required|string|max:255',
-                'Rekening_Donasi' => 'required|string|max:50',
-                'Target_Donasi' => 'required|numeric|min:0',
-                'Tanggal_Mulai_Donasi' => 'required|date',
-                'Tanggal_Selesai_Donasi' => 'required|date|after_or_equal:Tanggal_Mulai_Donasi',
-                'Emisi_Donasi' => 'nullable|numeric|min:0',
-            ], [
-                'Judul_Program.required' => 'Judul program harus diisi',
-                'Nama_Perusahaan.required' => 'Nama perusahaan harus diisi',
-                'Rekening_Donasi.required' => 'Nomor rekening harus diisi',
-                'Target_Donasi.required' => 'Target donasi harus diisi',
-                'Target_Donasi.numeric' => 'Target donasi harus berupa angka',
-                'Tanggal_Mulai_Donasi.required' => 'Tanggal mulai harus diisi',
-                'Tanggal_Selesai_Donasi.required' => 'Tanggal selesai harus diisi',
-                'Tanggal_Selesai_Donasi.after_or_equal' => 'Tanggal selesai harus setelah atau sama dengan tanggal mulai',
+            Log::info('🔍 [ProgramDonasi] Starting getActivePrograms...');
+            
+            // ✅ Query dengan nama kolom yang benar (lowercase)
+            $programs = ProgramDonasi::where('status', 'active')
+                ->orderBy('nama_program', 'asc')
+                ->get();
+            
+            Log::info('📊 [ProgramDonasi] Query result', [
+                'count' => $programs->count(),
+                'programs' => $programs->toArray(),
             ]);
-
-            if ($validator->fails()) {
+            
+            if ($programs->isEmpty()) {
+                Log::warning('⚠️ [ProgramDonasi] No active programs found');
+                
                 return response()->json([
-                    'status' => false,
-                    'message' => 'Validasi gagal',
-                    'errors' => $validator->errors()
-                ], 422);
+                    'success' => true,
+                    'status' => true,
+                    'data' => [],
+                    'message' => 'Belum ada program donasi tersedia'
+                ], 200);
             }
-
-            $program = ProgramDonasi::create([
-                'Judul_Program' => $request->Judul_Program,
-                'Nama_Perusahaan' => $request->Nama_Perusahaan,
-                'Rekening_Donasi' => $request->Rekening_Donasi,
-                'Target_Donasi' => $request->Target_Donasi,
-                'Tanggal_Mulai_Donasi' => $request->Tanggal_Mulai_Donasi,
-                'Tanggal_Selesai_Donasi' => $request->Tanggal_Selesai_Donasi,
-                'Emisi_Donasi' => $request->Emisi_Donasi ?? 0,
+            
+            // ✅ Map data dengan pengecekan null
+            $programList = $programs->map(function($program) {
+                $targetDonasi = (float) ($program->target_donasi_rp ?? 0);
+                $totalTerkumpul = (float) ($program->total_donasi_masuk ?? 0);
+                
+                $progressPercentage = 0;
+                if ($targetDonasi > 0) {
+                    $progressPercentage = round(($totalTerkumpul / $targetDonasi) * 100, 1);
+                }
+                
+                return [
+                    'id' => $program->id,
+                    'judul' => $program->nama_program ?? 'Program Donasi',
+                    'deskripsi' => $program->deskripsi ?? '',
+                    'icon' => $program->icon ?? '🌱',
+                    'target_number' => $program->target_angka ?? 0,
+                    'target_unit' => $program->target_satuan ?? 'pohon',
+                    'current_progress' => $program->progress_saat_ini ?? 0,
+                    'target_donasi' => $targetDonasi,
+                    'total_terkumpul' => $totalTerkumpul,
+                    'progress_percentage' => $progressPercentage,
+                ];
+            });
+            
+            Log::info('✅ [ProgramDonasi] Success', [
+                'count' => $programList->count(),
             ]);
-
+            
             return response()->json([
+                'success' => true,
                 'status' => true,
-                'message' => 'Program donasi berhasil ditambahkan',
-                'data' => $program
-            ], 201);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Gagal menambahkan program donasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Display the specified program donasi
-     */
-    public function show($id)
-    {
-        try {
-            $program = ProgramDonasi::find($id);
-
-            if (!$program) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Program donasi tidak ditemukan'
-                ], 404);
-            }
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Data program donasi berhasil diambil',
-                'data' => $program
+                'data' => $programList,
+                'message' => 'Program berhasil dimuat'
             ], 200);
-
+            
         } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Gagal mengambil data program donasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Update the specified program donasi
-     */
-    public function update(Request $request, $id)
-    {
-        try {
-            $program = ProgramDonasi::find($id);
-
-            if (!$program) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Program donasi tidak ditemukan'
-                ], 404);
-            }
-
-            $validator = Validator::make($request->all(), [
-                'Judul_Program' => 'sometimes|required|string|max:255',
-                'Nama_Perusahaan' => 'sometimes|required|string|max:255',
-                'Rekening_Donasi' => 'sometimes|required|string|max:50',
-                'Target_Donasi' => 'sometimes|required|numeric|min:0',
-                'Tanggal_Mulai_Donasi' => 'sometimes|required|date',
-                'Tanggal_Selesai_Donasi' => 'sometimes|required|date|after_or_equal:Tanggal_Mulai_Donasi',
-                'Emisi_Donasi' => 'nullable|numeric|min:0',
+            Log::error('❌ [ProgramDonasi] Error getActivePrograms', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
             ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Validasi gagal',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
-
-            $program->update($request->all());
-
+            
             return response()->json([
-                'status' => true,
-                'message' => 'Program donasi berhasil diperbarui',
-                'data' => $program
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
+                'success' => false,
                 'status' => false,
-                'message' => 'Gagal memperbarui program donasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Remove the specified program donasi
-     */
-    public function destroy($id)
-    {
-        try {
-            $program = ProgramDonasi::find($id);
-
-            if (!$program) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Program donasi tidak ditemukan'
-                ], 404);
-            }
-
-            $program->delete();
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Program donasi berhasil dihapus'
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Gagal menghapus program donasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get total count of program donasi
-     */
-    public function getProgramDonasiCount()
-    {
-        try {
-            $total = ProgramDonasi::count();
-            $active = ProgramDonasi::active()->count();
-
-            return response()->json([
-                'status' => true,
-                'data' => [
-                    'total' => $total,
-                    'active' => $active,
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Gagal mengambil jumlah program donasi',
+                'message' => 'Gagal mengambil program aktif',
                 'error' => $e->getMessage()
             ], 500);
         }

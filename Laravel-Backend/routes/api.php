@@ -16,7 +16,7 @@ use App\Http\Controllers\ProgramDonasiController;
 use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\EmisiController;
-
+use App\Http\Controllers\DonasiController;
 
 // ======================================================
 // 🔓 PUBLIC ROUTES
@@ -31,11 +31,18 @@ Route::post('/masyarakat/login', [AuthMasyarakatController::class, 'login']);
 
 
 // ======================================================
-// 💳 MIDTRANS PAYMENT ROUTES
+// 💳 MIDTRANS PAYMENT ROUTES (PUBLIC)
 // ======================================================
 Route::post('/create-payment', [PaymentController::class, 'createPayment']);
-Route::post('/midtrans/callback', [PaymentController::class, 'midtransCallback']);
+Route::post('/payment/create', [PaymentController::class, 'createPayment']);
+
+// Midtrans Callback
+Route::post('/midtrans/callback', [PaymentController::class, 'callback']);
+Route::post('/payment/callback', [PaymentController::class, 'callback']);
+
+// Check Payment Status
 Route::get('/check-status/{orderId}', [PaymentController::class, 'checkStatus']);
+Route::get('/payment/status/{orderId}', [PaymentController::class, 'checkStatus']);
 
 
 // ======================================================
@@ -54,7 +61,7 @@ Route::get('/emissions/monthly', [TripController::class, 'monthlySummary']);
 
 
 // ======================================================
-// 🌱 EMISI (ROUTES BARU DARI CLAUDE)
+// 🌱 EMISI (PUBLIC ROUTES)
 // ======================================================
 Route::prefix('emisi')->group(function () {
     Route::post('/store', [EmisiController::class, 'store']);
@@ -65,11 +72,19 @@ Route::prefix('emisi')->group(function () {
 
 
 // ======================================================
+// 🎁 PROGRAM DONASI (PUBLIC - FOR USER APP)
+// ======================================================
+Route::get('/programs/active', [ProgramDonasiController::class, 'getActivePrograms']);
+Route::get('/program-donasi', [ProgramDonasiController::class, 'index']);
+Route::get('/program-donasi/{id}', [ProgramDonasiController::class, 'show']);
+
+
+// ======================================================
 // 🔐 PROTECTED ROUTES (AUTH REQUIRED)
 // ======================================================
 Route::middleware('auth:sanctum')->group(function () {
 
-    // CURRENT USER
+    // CURRENT USER INFO
     Route::get('/me', function (Request $request) {
         return response()->json([
             'status' => true,
@@ -81,50 +96,99 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthMasyarakatController::class, 'logout']);
 
     // =======================
-    // 💳 PROTECTED PAYMENT
+    // 💳 PROTECTED PAYMENT ROUTES
     // =======================
+    Route::prefix('payment')->group(function () {
+        Route::get('/my-payments', [PaymentController::class, 'myPayments']);
+        Route::get('/total-emisi', [PaymentController::class, 'getTotalEmisi']);
+    });
+
+    // Alias
     Route::get('/my-payments', [PaymentController::class, 'myPayments']);
-    Route::get('/total-emisi', [PaymentController::class, 'getTotalEmisi']); // tetap dipakai
+    Route::get('/total-emisi', [PaymentController::class, 'getTotalEmisi']);
 
     // =======================
-    // 👤 MASYARAKAT
+    // 👤 MASYARAKAT PROFILE
     // =======================
     Route::prefix('masyarakat')->group(function () {
         Route::get('/profil', [ProfilMasyarakatController::class, 'show']);
         Route::post('/profil', [ProfilMasyarakatController::class, 'update']);
+        Route::post('/profil/update', [ProfilMasyarakatController::class, 'update']);
         Route::put('/change-password', [ProfilMasyarakatController::class, 'changePassword']);
     });
 
     // =======================
-    // 👑 ADMIN ROUTES
+    // 👑 ADMIN ROUTES (TANPA MIDDLEWARE check.admin)
     // =======================
     Route::prefix('admin')->group(function () {
 
-        // DASHBOARD STATS
+        // ==================== 🎁 DONASI ROUTES (DIPINDAHKAN KE ATAS) ====================
+        Route::prefix('donasi')->group(function () {
+            Route::get('/stats', [DonasiController::class, 'getStats']);
+            Route::get('/list', [DonasiController::class, 'getList']);
+            Route::get('/detail/{id}', [DonasiController::class, 'getDetail']);
+            Route::get('/export', [DonasiController::class, 'export']);
+            Route::get('/programs', [DonasiController::class, 'programs']);
+        });
+        
+        // ==================== DASHBOARD STATS ====================
         Route::get('/stats', [DashboardController::class, 'getStats']);
         Route::get('/stats/detailed', [DashboardController::class, 'getDetailedStats']);
         Route::get('/stats/overview', [DashboardController::class, 'getOverview']);
         Route::get('/stats/monthly', [DashboardController::class, 'getMonthlyStats']);
 
-        // CRUD MASYARAKAT
-        Route::get('/masyarakat', [MasyarakatController::class, 'index']);
-        Route::get('/masyarakat/{id}', [MasyarakatController::class, 'show']);
-        Route::delete('/masyarakat/{id}', [MasyarakatController::class, 'destroy']);
+        // ==================== CRUD MASYARAKAT ====================
+        Route::prefix('masyarakat')->group(function () {
+            Route::get('/', [MasyarakatController::class, 'index']);
+            Route::get('/{id}', [MasyarakatController::class, 'show']);
+            Route::delete('/{id}', [MasyarakatController::class, 'destroy']);
+        });
 
-        // CRUD BERITA
-        Route::post('/berita', [BeritaController::class, 'store']);
-        Route::post('/berita/{id}', [BeritaController::class, 'update']);
-        Route::delete('/berita/{id}', [BeritaController::class, 'destroy']);
+        // Alias
+        Route::get('/users', [MasyarakatController::class, 'index']);
+        Route::get('/users/{id}', [MasyarakatController::class, 'show']);
+        Route::delete('/users/{id}/delete', [MasyarakatController::class, 'destroy']);
 
-        // CRUD PROGRAM DONASI
-        Route::get('/program-donasi', [ProgramDonasiController::class, 'index']);
-        Route::post('/program-donasi', [ProgramDonasiController::class, 'store']);
-        Route::get('/program-donasi/{id}', [ProgramDonasiController::class, 'show']);
-        Route::put('/program-donasi/{id}', [ProgramDonasiController::class, 'update']);
-        Route::delete('/program-donasi/{id}', [ProgramDonasiController::class, 'destroy']);
+        // ==================== CRUD BERITA ====================
+        Route::prefix('berita')->group(function () {
+            Route::get('/', [BeritaController::class, 'index']);
+            Route::post('/', [BeritaController::class, 'store']);
+            Route::post('/store', [BeritaController::class, 'store']);
+            Route::get('/{id}', [BeritaController::class, 'show']);
+            Route::post('/{id}', [BeritaController::class, 'update']);
+            Route::post('/{id}/update', [BeritaController::class, 'update']);
+            Route::delete('/{id}', [BeritaController::class, 'destroy']);
+            Route::delete('/{id}/delete', [BeritaController::class, 'destroy']);
+        });
 
-        // STATISTIK TAMBAHAN
+        // ==================== CRUD PROGRAM DONASI ====================
+        Route::prefix('program-donasi')->group(function () {
+            Route::get('/', [ProgramDonasiController::class, 'index']);
+            Route::post('/', [ProgramDonasiController::class, 'store']);
+            Route::post('/store', [ProgramDonasiController::class, 'store']);
+            Route::get('/{id}', [ProgramDonasiController::class, 'show']);
+            Route::put('/{id}', [ProgramDonasiController::class, 'update']);
+            Route::put('/{id}/update', [ProgramDonasiController::class, 'update']);
+            Route::delete('/{id}', [ProgramDonasiController::class, 'destroy']);
+            Route::delete('/{id}/delete', [ProgramDonasiController::class, 'destroy']);
+        });
+
+        // ==================== STATISTIK TAMBAHAN ====================
         Route::get('/stats/berita', [BeritaController::class, 'getBeritaCount']);
         Route::get('/stats/program-donasi', [ProgramDonasiController::class, 'getProgramDonasiCount']);
-    });
-}); // END AUTH SANCTUM
+
+    }); // END ADMIN ROUTES
+
+}); // END AUTH SANCTUM MIDDLEWARE
+
+
+// ======================================================
+// 🔍 FALLBACK ROUTE (404 Handler)
+// ======================================================
+Route::fallback(function () {
+    return response()->json([
+        'success' => false,
+        'message' => 'Endpoint tidak ditemukan',
+        'error' => 'Route not found'
+    ], 404);
+});

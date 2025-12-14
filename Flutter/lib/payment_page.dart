@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
-import '../services/api_service.dart';
+import 'services/api_service.dart';
 import 'webview_page.dart';
 
 class PaymentPage extends StatefulWidget {
@@ -20,7 +20,7 @@ class PaymentPage extends StatefulWidget {
   final String kapasitas;
   final String bahanBakar;
   final double jarak;
-  final bool isTebusEmisi; // FLAG untuk mode Tebus Emisi
+  final bool isTebusEmisi;
 
   const PaymentPage({
     super.key,
@@ -76,18 +76,22 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
   bool _loadingHistory = false;
   final TextEditingController _manualInputController = TextEditingController();
 
+  // 🆕 STATE UNTUK PROGRAM DONASI
+  List<Map<String, dynamic>> _programList = [];
+  Map<String, dynamic>? _selectedProgram;
+  bool _loadingPrograms = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
     if (widget.isTebusEmisi) {
-      // Mode Tebus Emisi - LANGSUNG LOAD DATA
       print("🔵 [PaymentPage] initState - Mode Tebus Emisi");
       _loadTotalEmisi();
       _loadHistoryTebusEmisi();
+      _loadProgramDonasi(); // 🆕 Load programs
     } else {
-      // Mode Hitung Emisi (dari tracking GPS)
       _sessionEmisi = widget.emisiKg ?? 0.0;
       _vehicleType = widget.vehicleType;
       _kapasitas = widget.kapasitas;
@@ -108,7 +112,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ===== FIX UTAMA: RELOAD SETIAP KALI APP RESUME =====
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -119,12 +122,10 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     }
   }
 
-  // ===== FIX: RELOAD DATA SETIAP KALI HALAMAN MUNCUL KEMBALI =====
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Reload total emisi setiap kali halaman muncul
     if (widget.isTebusEmisi) {
       print("🔄 [PaymentPage] didChangeDependencies - Reload data");
       _loadTotalEmisi();
@@ -132,12 +133,10 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     }
   }
 
-  // ===== FIX: FORCE RELOAD SAAT BUILD PERTAMA KALI =====
   bool _isFirstBuild = true;
 
   @override
   Widget build(BuildContext context) {
-    // Force reload pada build pertama untuk Tebus Emisi
     if (_isFirstBuild && widget.isTebusEmisi) {
       _isFirstBuild = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -170,7 +169,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
               onPressed: _resetAll,
               tooltip: "Reset Total Emisi",
             ),
-          // ✅ TAMBAH: Button refresh manual untuk Tebus Emisi
           if (widget.isTebusEmisi)
             IconButton(
               icon: Icon(Icons.refresh, color: Colors.green.shade600),
@@ -178,6 +176,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                 print("🔄 [PaymentPage] Manual refresh clicked");
                 _loadTotalEmisi();
                 _loadHistoryTebusEmisi();
+                _loadProgramDonasi();
               },
               tooltip: "Refresh Data Emisi",
             ),
@@ -199,6 +198,11 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
               const SizedBox(height: 16),
               _buildMotivasiCard(),
               const Divider(height: 32, thickness: 2),
+
+              // 🆕 PILIH PROGRAM DONASI
+              _buildProgramDonasiSection(),
+              const Divider(height: 32, thickness: 2),
+
               _buildRingkasanTebusEmisi(),
             ]
             // MODE: HITUNG EMISI (dari tracking GPS)
@@ -229,14 +233,219 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     );
   }
 
-  // ===== REVISI FUNGSI _loadTotalEmisi =====
+  // 🆕 LOAD PROGRAM DONASI
+  Future<void> _loadProgramDonasi() async {
+    setState(() => _loadingPrograms = true);
+
+    try {
+      final result = await ApiService.getProgramDonasiAktif();
+
+      print('📋 Load programs result: $result');
+
+      if (result['success'] == true || result['status'] == true) {
+        final data = result['data'];
+        if (data is List) {
+          setState(() {
+            _programList = List<Map<String, dynamic>>.from(data);
+            _loadingPrograms = false;
+
+            // Auto-select first program if available
+            if (_programList.isNotEmpty && _selectedProgram == null) {
+              _selectedProgram = _programList[0];
+            }
+          });
+        }
+      } else {
+        setState(() => _loadingPrograms = false);
+      }
+    } catch (e) {
+      print('❌ Error loading programs: $e');
+      setState(() => _loadingPrograms = false);
+    }
+  }
+
+  // 🆕 BUILD PROGRAM DONASI SECTION
+  Widget _buildProgramDonasiSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.volunteer_activism, color: Color(0xFF4CAF50), size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Pilih Program Donasi',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Pilih program yang ingin kamu dukung',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (_loadingPrograms)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(color: Color(0xFF4CAF50)),
+              ),
+            )
+          else if (_programList.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Belum ada program donasi tersedia',
+                      style: GoogleFonts.poppins(color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._programList.map((program) => _buildProgramCard(program)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgramCard(Map<String, dynamic> program) {
+    final isSelected = _selectedProgram?['id'] == program['id'];
+    final progressPercentage = program['progress_percentage'] ?? 0.0;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedProgram = program;
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE8F5E9) : const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF4CAF50) : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Icon & Radio
+            Column(
+              children: [
+                Text(
+                  program['icon'] ?? '🌱',
+                  style: const TextStyle(fontSize: 32),
+                ),
+                const SizedBox(height: 8),
+                Icon(
+                  isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: isSelected ? const Color(0xFF4CAF50) : Colors.grey,
+                  size: 24,
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    program['judul'] ?? 'Program Donasi',
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Target: ${program['target_number']} ${program['target_unit']}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Progress Bar
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progressPercentage / 100,
+                            backgroundColor: Colors.grey.shade300,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isSelected ? const Color(0xFF4CAF50) : Colors.grey.shade500,
+                            ),
+                            minHeight: 6,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${progressPercentage.toStringAsFixed(0)}%',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Progress: ${program['current_progress']} / ${program['target_number']}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadTotalEmisi() async {
     try {
       print("📥 [PaymentPage] Loading total emisi from SharedPreferences...");
 
       final prefs = await SharedPreferences.getInstance();
-
-      // ✅ FIX: Paksa reload dari SharedPreferences
       await prefs.reload();
 
       final total = prefs.getDouble(_kSavedTotalEmisi) ?? 0.0;
@@ -247,7 +456,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
         setState(() {
           _totalEmisiTersedia = total;
 
-          // Set default value
           if (total > 0) {
             _emisiDitebus = total * 0.5;
           } else {
@@ -269,7 +477,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.reload(); // Force reload
+      await prefs.reload();
 
       List<String> historyList = prefs.getStringList(_kHistoryTebusEmisi) ?? [];
 
@@ -285,7 +493,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _saveHistoryTebusEmisi(double emisiKg, double nominal) async {
+  Future<void> _saveHistoryTebusEmisi(double emisiKg, double nominal, String programName) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       List<String> historyList = prefs.getStringList(_kHistoryTebusEmisi) ?? [];
@@ -294,18 +502,17 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
         'date': DateTime.now().toIso8601String(),
         'emisi_kg': emisiKg,
         'nominal': nominal,
+        'program': programName, // 🆕 Simpan nama program
       };
 
       historyList.insert(0, jsonEncode(newHistory));
 
-      // Limit history maksimal 50 item
       if (historyList.length > 50) {
         historyList = historyList.sublist(0, 50);
       }
 
       await prefs.setStringList(_kHistoryTebusEmisi, historyList);
 
-      // Reload history
       await _loadHistoryTebusEmisi();
     } catch (e) {
       debugPrint('❌ Error saving history: $e');
@@ -424,15 +631,24 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
   }
 
   Future<void> _createPayment() async {
+    // 🆕 VALIDASI: Cek apakah program sudah dipilih (untuk mode Tebus Emisi)
+    if (widget.isTebusEmisi && _selectedProgram == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("⚠️ Silakan pilih program donasi terlebih dahulu"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => isPaying = true);
 
     double emisiToPay = 0.0;
 
     if (widget.isTebusEmisi) {
-      // Mode Tebus Emisi - HAPUS SEMUA VALIDASI, langsung ambil nilai
       emisiToPay = _emisiDitebus;
 
-      // Jika emisi = 0, tampilkan pesan tapi tetap lanjut
       if (emisiToPay <= 0) {
         setState(() => isPaying = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -441,7 +657,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
         return;
       }
     } else {
-      // Mode Hitung Emisi
       emisiToPay = _sessionEmisi > 0 ? _sessionEmisi : _savedTotalEmisi;
     }
 
@@ -457,12 +672,15 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
     final user = await _getUserData();
 
     try {
+      // 🆕 Kirim program_id dan program_name ke backend
       final result = await ApiService.createPayment(
         amount: amount.toDouble(),
         emisi: emisiToPay,
         name: user['name']!,
         email: user['email']!,
         phone: user['phone']!,
+        programId: _selectedProgram?['id'], // 🆕
+        programName: _selectedProgram?['judul'] ?? 'Program Donasi', // 🆕
       );
 
       setState(() => isPaying = false);
@@ -470,7 +688,6 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
       if (result != null && result['success'] == true) {
         final url = result['redirect_url'] ?? '';
 
-        // Update emisi setelah payment sukses (sebelum redirect)
         if (widget.isTebusEmisi) {
           await _updateTebusEmisi();
         }
@@ -506,13 +723,16 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
 
       print("✅ UPDATE TEBUS EMISI: Sisa = ${sisaEmisi.toStringAsFixed(3)} kg");
 
-      // Simpan history
-      await _saveHistoryTebusEmisi(_emisiDitebus, _emisiDitebus * _hargaPerKg);
+      // 🆕 Simpan history dengan nama program
+      await _saveHistoryTebusEmisi(
+        _emisiDitebus,
+        _emisiDitebus * _hargaPerKg,
+        _selectedProgram?['judul'] ?? 'Program Donasi',
+      );
 
       setState(() {
         _totalEmisiTersedia = sisaEmisi;
 
-        // Update nilai ditebus
         if (sisaEmisi > 0) {
           _emisiDitebus = sisaEmisi * 0.5;
         } else {
@@ -652,12 +872,9 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
   }
 
   Widget _buildSliderSection() {
-    // Validasi nilai slider untuk menghindari error
     final minValue = 0.0;
     final maxValue = _totalEmisiTersedia > 0 ? _totalEmisiTersedia : 1.0;
     final currentValue = _emisiDitebus.clamp(minValue, maxValue);
-
-    // Pastikan divisions tidak 0 atau negatif
     final divisions = (maxValue * 10).toInt().clamp(1, 1000);
 
     return Container(
@@ -855,6 +1072,14 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           _summaryRow('Sisa emisi:', '${sisaEmisi.toStringAsFixed(2)} kg'),
+          // 🆕 Tampilkan program yang dipilih
+          if (_selectedProgram != null) ...[
+            const SizedBox(height: 8),
+            _summaryRow(
+              'Program:',
+              '${_selectedProgram!['icon']} ${_selectedProgram!['judul']}',
+            ),
+          ],
         ],
       ),
     );
@@ -868,12 +1093,15 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
           label,
           style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade700),
         ),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: highlight ? 18 : 14,
-            fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-            color: highlight ? const Color(0xFF4CAF50) : Colors.black87,
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: highlight ? 18 : 14,
+              fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
+              color: highlight ? const Color(0xFF4CAF50) : Colors.black87,
+            ),
+            textAlign: TextAlign.right,
           ),
         ),
       ],
@@ -938,6 +1166,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                 final date = DateTime.parse(item['date']);
                 final emisi = item['emisi_kg'];
                 final nominal = item['nominal'];
+                final programName = item['program'] ?? 'Program Donasi'; // 🆕
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -955,9 +1184,22 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                         fontSize: 14,
                       ),
                     ),
-                    subtitle: Text(
-                      DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(date),
-                      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          programName, // 🆕 Tampilkan nama program
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFF4CAF50),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(date),
+                          style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                     trailing: Text(
                       'Rp ${NumberFormat('#,###', 'id_ID').format(nominal)}',
@@ -967,6 +1209,7 @@ class _PaymentPageState extends State<PaymentPage> with WidgetsBindingObserver {
                         fontSize: 14,
                       ),
                     ),
+                    isThreeLine: true,
                   ),
                 );
               },

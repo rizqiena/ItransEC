@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../admin/kelola_penerima_page.dart';
 import 'berita_admin.dart';
 import 'anggota_aktif.dart';
+import 'donasi_admin_page.dart';
 import '../login_page.dart';
 import '../services/api_service.dart';
 import '../services/berita_services.dart';
@@ -15,13 +16,12 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  // ✅ Dashboard stats dari database
   int totalUser = 0;
-  int totalBerita = 0; // ✅ Real data dari API
-  int totalPenerima = 0; // ✅ Real data dari API
+  int totalBerita = 0;
+  int totalPenerima = 0;
+  int totalDonasi = 0;
   bool isLoadingStats = true;
 
-  // ✅ Latest berita untuk ditampilkan di dashboard
   List<Berita> latestBerita = [];
   bool isLoadingBerita = true;
 
@@ -32,7 +32,6 @@ class _DashboardPageState extends State<DashboardPage> {
     _loadLatestBerita();
   }
 
-  // ✅ Load stats dari API
   Future<void> _loadDashboardStats() async {
     setState(() {
       isLoadingStats = true;
@@ -45,14 +44,14 @@ class _DashboardPageState extends State<DashboardPage> {
         isLoadingStats = false;
         if (result['status'] == true) {
           totalUser = result['data']['total_user'] ?? 0;
-          totalBerita = result['data']['total_berita'] ?? 0; // ✅ Real data
-          totalPenerima = result['data']['total_penerima'] ?? 0; // ✅ Real data
+          totalBerita = result['data']['total_berita'] ?? 0;
+          totalPenerima = result['data']['total_penerima'] ?? 0;
+          totalDonasi = result['data']['total_donasi'] ?? 0;
         }
       });
     }
   }
 
-  // ✅ Load latest berita
   Future<void> _loadLatestBerita() async {
     setState(() {
       isLoadingBerita = true;
@@ -70,7 +69,6 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // ✅ Refresh All Data
   Future<void> _refreshAll() async {
     await Future.wait([
       _loadDashboardStats(),
@@ -78,7 +76,6 @@ class _DashboardPageState extends State<DashboardPage> {
     ]);
   }
 
-  // ✅ Logout dengan konfirmasi
   Future<void> _showLogoutConfirmation() async {
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -111,7 +108,7 @@ class _DashboardPageState extends State<DashboardPage> {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginPage()),
-          (route) => false,
+              (route) => false,
         );
       }
     }
@@ -184,6 +181,16 @@ class _DashboardPageState extends State<DashboardPage> {
                 );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.volunteer_activism, color: Colors.black54),
+              title: const Text("💰 Donasi"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DonasiAdminPage()),
+                );
+              },
+            ),
             const Spacer(),
             const Divider(),
             ListTile(
@@ -235,7 +242,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const SizedBox(height: 30),
 
-              // ✅ Stats Cards (Real-time dari database)
+              // ✅ FIXED: Stats Cards dengan GridView agar seimbang di mobile
               if (isLoadingStats)
                 const Center(
                   child: Padding(
@@ -244,49 +251,60 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 )
               else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 0.95, // ⭐ Mengatur rasio tinggi/lebar agar seimbang
+                  physics: const NeverScrollableScrollPhysics(),
                   children: [
-                    Expanded(
-                      child: PressableScale(
-                        onTap: () {
-                          Navigator.push(context,
+                    PressableScale(
+                      onTap: () {
+                        Navigator.push(context,
                             MaterialPageRoute(builder: (_) => const BeritaAdminPage()));
-                        },
-                        child: _statCard(
-                          icon: Icons.newspaper_rounded,
-                          label: "Berita",
-                          count: totalBerita.toString(), // ✅ Real data!
-                          color: const Color(0xFF4CAF50),
-                        ),
+                      },
+                      child: _statCard(
+                        icon: Icons.newspaper_rounded,
+                        label: "Berita",
+                        count: totalBerita.toString(),
+                        color: const Color(0xFF4CAF50),
                       ),
                     ),
-                    Expanded(
-                      child: PressableScale(
-                        onTap: () {
-                          Navigator.push(context,
+                    PressableScale(
+                      onTap: () {
+                        Navigator.push(context,
                             MaterialPageRoute(builder: (_) => const KelolaPenerimaPage()));
-                        },
-                        child: _statCard(
-                          icon: Icons.volunteer_activism_rounded,
-                          label: "Penerima",
-                          count: totalPenerima.toString(), // ✅ Real data!
-                          color: Colors.orangeAccent,
-                        ),
+                      },
+                      child: _statCard(
+                        icon: Icons.volunteer_activism_rounded,
+                        label: "Penerima",
+                        count: totalPenerima.toString(),
+                        color: Colors.orangeAccent,
                       ),
                     ),
-                    Expanded(
-                      child: PressableScale(
-                        onTap: () {
-                          Navigator.push(context,
+                    PressableScale(
+                      onTap: () {
+                        Navigator.push(context,
                             MaterialPageRoute(builder: (_) => const AnggotaAktifPage()));
-                        },
-                        child: _statCard(
-                          icon: Icons.people_alt_rounded,
-                          label: "User Acc",
-                          count: totalUser.toString(), // ✅ Real data!
-                          color: Colors.blueAccent,
-                        ),
+                      },
+                      child: _statCard(
+                        icon: Icons.people_alt_rounded,
+                        label: "User Acc",
+                        count: totalUser.toString(),
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                    PressableScale(
+                      onTap: () {
+                        Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const DonasiAdminPage()));
+                      },
+                      child: _statCard(
+                        icon: Icons.attach_money_rounded,
+                        label: "Donasi",
+                        count: totalDonasi.toString(),
+                        color: Colors.purpleAccent,
                       ),
                     ),
                   ],
@@ -294,7 +312,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
               const SizedBox(height: 35),
 
-              // ✅ Latest Berita Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -315,7 +332,6 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const SizedBox(height: 15),
 
-              // ✅ Berita List
               if (isLoadingBerita)
                 const Center(
                   child: Padding(
@@ -345,7 +361,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   PressableScale(
                     onTap: () {
                       Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const BeritaAdminPage()));
+                          MaterialPageRoute(builder: (_) => const BeritaAdminPage()));
                     },
                     child: _menuCard(
                       icon: Icons.newspaper_rounded,
@@ -356,7 +372,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   PressableScale(
                     onTap: () {
                       Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const KelolaPenerimaPage()));
+                          MaterialPageRoute(builder: (_) => const KelolaPenerimaPage()));
                     },
                     child: _menuCard(
                       icon: Icons.volunteer_activism_rounded,
@@ -367,12 +383,23 @@ class _DashboardPageState extends State<DashboardPage> {
                   PressableScale(
                     onTap: () {
                       Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const AnggotaAktifPage()));
+                          MaterialPageRoute(builder: (_) => const AnggotaAktifPage()));
                     },
                     child: _menuCard(
                       icon: Icons.people_alt_rounded,
                       title: "User Acc",
                       color: Colors.blueAccent,
+                    ),
+                  ),
+                  PressableScale(
+                    onTap: () {
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const DonasiAdminPage()));
+                    },
+                    child: _menuCard(
+                      icon: Icons.attach_money_rounded,
+                      title: "Kelola Donasi",
+                      color: Colors.purpleAccent,
                     ),
                   ),
                 ],
@@ -391,7 +418,7 @@ class _DashboardPageState extends State<DashboardPage> {
     required Color color,
   }) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
+      // ✅ REMOVED margin horizontal agar tidak ada gap tidak perlu
       padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -434,7 +461,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  // ✅ Berita Card Widget
   Widget _buildBeritaCard(Berita berita) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -455,24 +481,22 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 🖼️ Gambar
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: berita.gambarBerita != null && berita.gambarBerita!.isNotEmpty
                     ? Image.network(
-                        berita.gambarBerita!,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildPlaceholderImage();
-                        },
-                      )
+                  berita.gambarBerita!,
+                  width: 80,
+                  height: 80,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return _buildPlaceholderImage();
+                  },
+                )
                     : _buildPlaceholderImage(),
               ),
               const SizedBox(width: 12),
 
-              // 📝 Content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

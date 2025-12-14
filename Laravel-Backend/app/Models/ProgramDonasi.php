@@ -10,60 +10,42 @@ class ProgramDonasi extends Model
     use HasFactory;
 
     protected $table = 'program_donasis';
-    protected $primaryKey = 'Id_Donasi';
-
+    
+    // ✅ PRIMARY KEY: 'id' (lowercase, sesuai screenshot)
+    protected $primaryKey = 'id';
+    
+    public $incrementing = true;
+    
+    // ✅ KOLOM SESUAI DATABASE (lowercase semua)
     protected $fillable = [
-        'Judul_Program',
-        'Rekening_Donasi',
-        'Emisi_Donasi',
-        'Nama_Perusahaan',
-        'Target_Donasi',
-        'Tanggal_Mulai_Donasi',
-        'Tanggal_Selesai_Donasi',
+        'nama_program',
+        'deskripsi',
+        'icon',
+        'target_angka',
+        'target_satuan',
+        'progress_saat_ini',
+        'target_donasi_rp',
+        'total_donasi_masuk',
+        'status',
+        'gambar_url',
     ];
 
     protected $casts = [
-        'Emisi_Donasi' => 'decimal:2',
-        'Target_Donasi' => 'decimal:2',
-        'Tanggal_Mulai_Donasi' => 'date',
-        'Tanggal_Selesai_Donasi' => 'date',
+        'target_angka' => 'integer',
+        'progress_saat_ini' => 'integer',
+        'target_donasi_rp' => 'decimal:2',
+        'total_donasi_masuk' => 'decimal:2',
     ];
 
-    /**
-     * Get total terkumpul (Emisi_Donasi sebagai total terkumpul)
-     */
-    public function getTotalTerkumpulAttribute()
+    // Relationship
+    public function donasis()
     {
-        return $this->Emisi_Donasi;
+        return $this->hasMany(Donasi::class, 'program_id', 'id');
     }
 
-    /**
-     * Get persentase progress donasi
-     */
-    public function getPersentaseProgressAttribute()
-    {
-        if ($this->Target_Donasi <= 0) {
-            return 0;
-        }
-        return min(100, ($this->Emisi_Donasi / $this->Target_Donasi) * 100);
-    }
-
-    /**
-     * Check if program is active
-     */
-    public function getIsActiveAttribute()
-    {
-        $now = now();
-        return $now->between($this->Tanggal_Mulai_Donasi, $this->Tanggal_Selesai_Donasi);
-    }
-
-    /**
-     * Scope untuk program yang sedang aktif
-     */
+    // Scope untuk program aktif
     public function scopeActive($query)
     {
-        $now = now();
-        return $query->where('Tanggal_Mulai_Donasi', '<=', $now)
-                     ->where('Tanggal_Selesai_Donasi', '>=', $now);
+        return $query->where('status', 'active');
     }
 }
